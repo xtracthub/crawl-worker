@@ -1,0 +1,16 @@
+# cython==0.29.14
+psycopg2
+boto3
+xmltodict
+tableschema
+git+https://github.com/materials-data-facility/MaterialsIO.git
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+xtract_sdk==0.0.5
+boxsdk
+dfttopif
+Pillow
+# pycalphad
+# ipyopt
+networkx
