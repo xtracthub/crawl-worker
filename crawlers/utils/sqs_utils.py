@@ -40,7 +40,7 @@ def get_crawl_work_queue(client):
     #
     # crawl_work_queue = response["QueueUrl"]
 
-    crawl_work_queue = 'https://sqs.us-east-1.amazonaws.com/576668000072/crawl_work_queue'
+    crawl_work_queue = 'https://sqs.us-east-1.amazonaws.com/576668000072/ryan_crawl_work_queue'
 
     return crawl_work_queue
 
@@ -59,15 +59,16 @@ def get_next_task(max_timeout=20, delete_messages=True):
 
     print("Successfully received task from SQS!")
 
-    message = sqs_response["Messages"][0]["Body"]
+    if "Messages" in sqs_response:
+        message = sqs_response["Messages"][0]["Body"]
 
-    receipt_handle = sqs_response["Messages"][0]["ReceiptHandle"]
-    receipt_id = sqs_response["Messages"][0]["MessageId"]
+        receipt_handle = sqs_response["Messages"][0]["ReceiptHandle"]
+        receipt_id = sqs_response["Messages"][0]["MessageId"]
 
-    if delete_messages:
-        delete_message(client, {'ReceiptHandle': receipt_handle, 'Id': receipt_id})
+        if delete_messages:
+            delete_message(client, {'ReceiptHandle': receipt_handle, 'Id': receipt_id})
 
-    return json.loads(message)
+        return json.loads(message)
 
 
 def push_crawl_task(task, unique_id):

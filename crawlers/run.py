@@ -31,6 +31,8 @@ def main_crawl_loop():
     crawl_id = task['crawl_id']
     transfer_token = task['transfer_token']
     auth_token = task['auth_token']
+    max_crawl_threads = task["max_crawl_threads"]
+    print(f"USING {max_crawl_threads} THREADS")
 
     conn = pg_conn()
     cur = conn.cursor()
@@ -61,7 +63,8 @@ def main_crawl_loop():
                                eid=path_item['ep_id'],
                                trans_token=transfer_token,
                                auth_token=auth_token,
-                               path=path_item['path'])
+                               path=path_item['path'],
+                               max_crawl_threads=max_crawl_threads)
             tc = cr.get_transfer()
             cr.crawl(tc)
 

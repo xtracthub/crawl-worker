@@ -23,7 +23,7 @@ from base import Crawler
 
 from xtract_sdk.packagers import Family
 
-max_crawl_threads = 8
+# max_crawl_threads = 8
 
 overall_logger = logging.getLogger(__name__)
 overall_logger.setLevel(logging.DEBUG)
@@ -51,7 +51,8 @@ size_tallies = {"decompressed": 0, "compressed": 0, "hierarch": 0}
 class GlobusCrawler(Crawler):
 
     def __init__(self, eid, path, crawl_id, trans_token,
-                 auth_token=None, grouper_name=None, logging_level='debug', base_url=None):
+                 auth_token=None, grouper_name=None, logging_level='debug', base_url=None,
+                 max_crawl_threads=8):
 
         Crawler.__init__(self)
         self.path = path
@@ -237,6 +238,7 @@ class GlobusCrawler(Crawler):
             raise ValueError("TODO: invalid grouper type! Return this to the user!")
 
         while True:
+            print(f"NUM IDLE: {self.idle_worker_count}")
             t_start = time.time()
             all_file_mdata = {}  # Holds all metadata for a given Globus directory.
 
@@ -274,6 +276,9 @@ class GlobusCrawler(Crawler):
 
             # In the case where we successfully extracted from queue AND worker not "ACTIVE", make it active.
             if self.worker_status_dict[worker_id] != "ACTIVE":
+                if self.worker_status_dict[worker_id] == "IDLE":
+                    self.idle_worker_count -= 1
+
                 self.worker_status_dict[worker_id] = "ACTIVE"
                 file_logger.info(f"Worker ID: {worker_id} promoted to ACTIVE.")
 
@@ -395,6 +400,9 @@ class GlobusCrawler(Crawler):
         cur.execute(crawl_update)
         self.conn.commit()
 
+        experiment_thread = threading.Thread(target=self.experiment)
+        experiment_thread.start()
+
         list_threads = []
         for i in range(self.max_crawl_threads):
             t = threading.Thread(target=self.launch_crawl_worker, args=(transfer, i))
@@ -416,6 +424,8 @@ class GlobusCrawler(Crawler):
         print(f"Hanging commit time: {ty-tx}")
 
         self.crawl_status = "SUCCEEDED"
+
+        experiment_thread.join()
 
         t_end = time.time()
 
@@ -453,3 +463,28 @@ class GlobusCrawler(Crawler):
 
         with open('failed_groups.json', 'w') as gp:
             json.dump(self.failed_groups, gp)
+
+    def experiment(self):
+        data = []
+        t0 = time.time()
+
+        while self.crawl_status != "SUCCEEDED":
+            data.append({
+                "time": time.time() - t0,
+                "qsize": self.to_crawl.qsize(),
+                "idle_count": self.idle_worker_count
+            })
+            time.sleep(1)
+
+        import csv
+        fields = ["time", "qsize", "idle_count"]
+        filename = f"{self.max_crawl_threads}_experiment.csv"
+        with open(filename, "w") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames = fields)
+
+            # writing headers (field names)
+            writer.writeheader()
+
+            # writing data rows
+            writer.writerows(data)
+

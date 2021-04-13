@@ -6,8 +6,8 @@ import os
 
 def get_uid_from_token(auth_token):
     # Step 1: Get Auth Client with Secrets.
-    client_id = os.getenv("globus_client")
-    secret = os.getenv("globus_secret")
+    client_id = os.getenv("GLOBUS_FUNCX_CLIENT")
+    secret = os.getenv("GLOBUS_FUNCX_SECRET")
 
     # Step 2: Transform token and introspect it.
     t0 = time.time()
