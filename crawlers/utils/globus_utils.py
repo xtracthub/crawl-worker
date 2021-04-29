@@ -19,6 +19,7 @@ def get_uid_from_token(auth_token):
     t1 = time.time()
 
     try:
+        print(auth_detail)
         uid = auth_detail['username']
     except KeyError as e:
         raise ValueError("Unable to identify Globus user. Returning (to reject!)")
@@ -27,3 +28,6 @@ def get_uid_from_token(auth_token):
 
     # print(uid)
     return uid
+
+# tokens = {'crawl_id': '293e469e-30bc-4243-b09a-06f549c58222', 'transfer_token': 'Ag80Ewz79jy8oe29m4QrqYmlJnjnXljjYYBdvll9qGnQGa8K4Ys8CBqbKoWnYvQ7la9kqQ7G43j9MBh7Q0KPlty33z', 'auth_token': 'Ag80Ewz79jy8oe29m4QrqYmlJnjnXljjYYBdvll9qGnQGa8K4Ys8CBqbKoWnYvQ7la9kqQ7G43j9MBh7Q0KPlty33z'}
+# get_uid_from_token('AgaDEQrr9kbogWWyJwJ8dM1GYw0lzvxk6dvYKGDkMKD71VOGO5u9CgxbxqyGQj333zlQaeKPbQNX1dTPJ2GvOuywwJ')

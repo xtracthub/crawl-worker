@@ -4,9 +4,8 @@ import os
 import json
 
 import boto3
-
-
 # TODO: low-priority make the crawl-worker have a persistent SQS client object (e.g., make a class).
+
 
 def get_sqs_conn():
 

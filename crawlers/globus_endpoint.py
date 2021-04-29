@@ -89,7 +89,6 @@ class GlobusCrawler(Crawler):
         self.total_auth_time = 0
 
         self.insert_files_queue = Queue()
-
         self.commit_queue_empty = True  # TODO: switch back to false when committing turned back on.
 
         self.client = boto3.client('sqs',
@@ -130,6 +129,12 @@ class GlobusCrawler(Crawler):
         cur = self.conn.cursor()
         query = f"UPDATE crawls SET status='complete', ended_on='{datetime.utcnow()}' WHERE crawl_id='{self.crawl_id}';"
         cur.execute(query)
+
+        stats_query = f"UPDATE crawl_stats SET " \
+                      f"files_crawled={self.count_files_crawled}," \
+                      f"bytes_crawled={self.count_bytes_crawled}," \
+                      f"groups_crawled={self.count_groups_crawled}"
+        cur.execute(stats_query)
 
         return self.conn.commit()
 
@@ -191,8 +196,6 @@ class GlobusCrawler(Crawler):
             extension = filename.split('.')[-1]
         return extension
 
-
-
     def gen_group_id(self):
         return uuid.uuid4()
 
@@ -229,12 +232,17 @@ class GlobusCrawler(Crawler):
         self.worker_status_dict[worker_id] = "STARTING"
 
         # TODO: add 'by directory' here.
+
+        g_time = time.time()
         if self.grouper == "matio":
             grouper = matio_grouper.MatIOGrouper(logger=file_logger)
         elif self.grouper == "gdrive":
             grouper = simple_ext_grouper.SimpleExtensionGrouper(creds=None)
         else:
             raise ValueError("TODO: invalid grouper type! Return this to the user!")
+        g_time_end = time.time()
+
+        print(f"Total group time: {g_time_end-g_time}")
 
         while True:
             t_start = time.time()
@@ -453,3 +461,11 @@ class GlobusCrawler(Crawler):
 
         with open('failed_groups.json', 'w') as gp:
             json.dump(self.failed_groups, gp)
+
+    # TODO: Make this faster for larger files.
+    # def crawl_update(self):
+    #     conn = pg_conn()
+
+
+
+
