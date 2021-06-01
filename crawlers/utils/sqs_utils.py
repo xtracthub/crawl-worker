@@ -32,13 +32,8 @@ def delete_message(client, msg_info):
 
 
 def get_crawl_work_queue(client):
-    # response = client.get_queue_url(
-    #     QueueName='crawl_work_queue',
-    #     QueueOwnerAWSAccountId=os.environ["aws_access"]
-    # )
-    #
-    # crawl_work_queue = response["QueueUrl"]
 
+    # TODO: TYLER -- BE CAREFUL BEFORE PUSHING.
     crawl_work_queue = 'https://sqs.us-east-1.amazonaws.com/576668000072/crawl_work_queue'
 
     return crawl_work_queue

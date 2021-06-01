@@ -51,7 +51,7 @@ size_tallies = {"decompressed": 0, "compressed": 0, "hierarch": 0}
 class GlobusCrawler(Crawler):
 
     def __init__(self, eid, path, crawl_id, trans_token,
-                 auth_token=None, grouper_name=None, logging_level='debug', base_url=None):
+                 auth_token=None, funcx_token=None, grouper_name=None, logging_level='debug', base_url=None):
 
         Crawler.__init__(self)
         self.path = path
@@ -61,6 +61,7 @@ class GlobusCrawler(Crawler):
         self.group_count = 0
         self.transfer_token = trans_token
         self.auth_token = auth_token
+        self.funcx_token = funcx_token
         self.conn = pg_conn()
         self.crawl_id = crawl_id
         self.grouper = "matio"  # TODO
@@ -112,7 +113,7 @@ class GlobusCrawler(Crawler):
 
         # TODO: catch exceptions for this in run.py
         print(f"Auth token: {self.auth_token}")
-        self.token_owner = get_uid_from_token(self.auth_token)
+        self.token_owner = get_uid_from_token(self.funcx_token)
 
         logging.info("Launching occasional commit thread")
 
