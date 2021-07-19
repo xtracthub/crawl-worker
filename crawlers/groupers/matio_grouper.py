@@ -4,7 +4,6 @@ from uuid import uuid4
 import itertools
 import time
 
-
 import networkx as nx
 
 
@@ -125,7 +124,6 @@ class MatIOGrouper:
                 group_id = str(uuid4())
 
                 for filename in gr:
-                    # print(gr_list)
                     if filename not in file_groups_map:
                         file_groups_map[filename] = [group_id]
                     file_groups_map[filename].append(group_id)
@@ -139,7 +137,6 @@ class MatIOGrouper:
         t_graph_end = time.time()
         self.total_graphing_time += t_graph_end - t_graph_start
 
-        # self.logger.info(f"Total time to build graph: {t_graph_end - t_graph_start}")
         print(f"Total time to build graph: {t_graph_end - t_graph_start}")
 
         # Use the connected components to generate a family for each connected component.
@@ -152,6 +149,4 @@ class MatIOGrouper:
         self.logger.info(f"Total time to pack groups: {t_group_pack_end - t_graph_start}")
         self.logger.debug(f"Generated {len(families)} mutually exclusive families of file-groups... Terminating...")
 
-        # print(f"Length of families: {len(families)}")
-        # print(f"One family: {families[0]}")
         return families

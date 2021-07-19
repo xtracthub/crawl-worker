@@ -33,8 +33,7 @@ def delete_message(client, msg_info):
 
 def get_crawl_work_queue(client):
 
-    # TODO: TYLER -- BE CAREFUL BEFORE PUSHING.
-    crawl_work_queue = 'https://sqs.us-east-1.amazonaws.com/576668000072/crawl_work_queue'
+    crawl_work_queue = 'https://sqs.us-east-1.amazonaws.com/576668000072/crawl_work_queue_DEBUG'
 
     return crawl_work_queue
 

@@ -17,7 +17,7 @@ from queue import Queue
 from globus_sdk.exc import GlobusAPIError, TransferAPIError, GlobusTimeoutError
 from globus_sdk import (TransferClient, AccessTokenAuthorizer, ConfidentialAppAuthClient)
 
-from groupers import matio_grouper, simple_ext_grouper
+from groupers import matio_grouper, simple_ext_grouper, no_group
 
 from base import Crawler
 
@@ -64,7 +64,9 @@ class GlobusCrawler(Crawler):
         self.funcx_token = funcx_token
         self.conn = pg_conn()
         self.crawl_id = crawl_id
-        self.grouper = "matio"  # TODO
+
+        print(f"Grouper name: {grouper_name}")
+        self.grouper = grouper_name
 
         self.crawl_status = "STARTING"
         self.worker_status_dict = {}
@@ -73,6 +75,8 @@ class GlobusCrawler(Crawler):
         self.families_to_enqueue = Queue()
 
         self.fam_count = 0
+
+        self.pg_update_interval = 2
 
         self.count_groups_crawled = 0
         self.count_files_crawled = 0
@@ -126,6 +130,10 @@ class GlobusCrawler(Crawler):
             self.sqs_push_threads[i] = True
         print(f"Successfully started {len(self.sqs_push_threads)} SQS push threads!")
 
+        update_thr = threading.Thread(target=self.db_crawl_update_thr, args=())
+        update_thr.start()
+        print("Successfully started DB update thread!")
+
     def db_crawl_end(self):
         cur = self.conn.cursor()
         query = f"UPDATE crawls SET status='complete', ended_on='{datetime.utcnow()}' WHERE crawl_id='{self.crawl_id}';"
@@ -138,6 +146,27 @@ class GlobusCrawler(Crawler):
         cur.execute(stats_query)
 
         return self.conn.commit()
+
+    def db_crawl_update_thr(self):
+        last_time = time.time()
+        while True:
+
+            if time.time() - last_time >= self.pg_update_interval:
+
+                cur = self.conn.cursor()
+
+                stats_query = f"UPDATE crawl_stats SET " \
+                              f"files_crawled={self.count_files_crawled}," \
+                              f"bytes_crawled={self.count_bytes_crawled}," \
+                              f"groups_crawled={self.count_groups_crawled}"
+                cur.execute(stats_query)
+                self.conn.commit()
+            else:
+                time.sleep(0.25)
+
+            if self.crawl_status=="COMMITTING" or self.crawl_status=="SUCCEEDED":
+                # end the thread
+                break
 
     def enqueue_loop(self, thr_id):
 
@@ -222,23 +251,19 @@ class GlobusCrawler(Crawler):
         # Borrowed from here:
         # https://stackoverflow.com/questions/6386698/how-to-write-to-a-file-using-the-logging-python-module
         file_logger = logging.getLogger(str(worker_id))  # TODO: __name__?
-        # file_logger.setLevel(logging.DEBUG)
 
-        # fh = logging.FileHandler(f"cr_worker_{worker_id}-{max_crawl_threads - 1}.log")
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        # fh.setFormatter(formatter)
-        # file_logger.addHandler(fh)
-        # file_logger.propagate = False
 
         self.worker_status_dict[worker_id] = "STARTING"
 
         # TODO: add 'by directory' here.
-
         g_time = time.time()
         if self.grouper == "matio":
             grouper = matio_grouper.MatIOGrouper(logger=file_logger)
         elif self.grouper == "gdrive":
             grouper = simple_ext_grouper.SimpleExtensionGrouper(creds=None)
+        elif self.grouper == "file_is_group":
+            grouper = no_group.NoGrouper(logger=file_logger)
         else:
             raise ValueError("TODO: invalid grouper type! Return this to the user!")
         g_time_end = time.time()
@@ -292,8 +317,8 @@ class GlobusCrawler(Crawler):
                     try:
                         t_gl_ls_start = time.time()
                         file_logger.debug(f"Expanding directory: {cur_dir}")
-                        print(f"The ID")
                         dir_contents = transfer.operation_ls(self.eid, path=cur_dir)
+
                         t_gl_ls_end = time.time()
 
                         file_logger.info(f"Total time to do globus_ls: {t_gl_ls_end - t_gl_ls_start}")
@@ -362,8 +387,9 @@ class GlobusCrawler(Crawler):
                         self.count_groups_crawled += len(family['groups'])
 
                         # TODO: Move all of this into matio_grouper.py
+                        # TODO: Cancel above. Make everything match this today.
                         for group in family['groups']:
-                            print(f"Group: {group}")
+                            # print(f"Group: {group}")
 
                             file_dict_ls = []
                             for fname in group['files']:
@@ -375,6 +401,7 @@ class GlobusCrawler(Crawler):
                         dict_fam = fam.to_dict()
                         dict_fam['metadata']['crawl_timestamp'] = time.time()
 
+                        print(f"Sending: {dict_fam}")
                         self.families_to_enqueue.put({"Id": str(self.fam_count), "MessageBody": json.dumps(dict_fam)})
                         self.fam_count += 1
 
@@ -439,15 +466,6 @@ class GlobusCrawler(Crawler):
         overall_logger.info(f"\n***FINAL groups processed for crawl_id {self.crawl_id}: {self.group_count}***")
         overall_logger.info(f"\n*** CRAWL COMPLETE  (ID: {self.crawl_id})***")
 
-        # if self.csv_writer:
-        #     print("Writing CSV...")
-        #     import csv
-        #     with open("UMICH-07-17-2020-CRAWL.csv", 'w') as csv_file:
-        #         writer = csv.writer(csv_file, delimiter=',')
-        #         writer.writerow(["full_path", "size_bytes", "extension", "label"])
-        #         for line in self.line_list:
-        #             writer.writerow(line)
-
         while True:
             # TODO 2: Should also not check queue but receive status directly from DB thread.
             if self.commit_queue_empty:
@@ -462,11 +480,3 @@ class GlobusCrawler(Crawler):
 
         with open('failed_groups.json', 'w') as gp:
             json.dump(self.failed_groups, gp)
-
-    # TODO: Make this faster for larger files.
-    # def crawl_update(self):
-    #     conn = pg_conn()
-
-
-
-
