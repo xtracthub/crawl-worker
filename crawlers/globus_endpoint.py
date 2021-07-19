@@ -400,6 +400,7 @@ class GlobusCrawler(Crawler):
 
                         dict_fam = fam.to_dict()
                         dict_fam['metadata']['crawl_timestamp'] = time.time()
+                        dict_fam['metadata']['globus_eid'] = self.eid
 
                         print(f"Sending: {dict_fam}")
                         self.families_to_enqueue.put({"Id": str(self.fam_count), "MessageBody": json.dumps(dict_fam)})
