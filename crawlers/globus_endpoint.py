@@ -119,8 +119,20 @@ class GlobusCrawler(Crawler):
         print(f"Auth token: {self.auth_token}")
         self.token_owner = get_uid_from_token(self.funcx_token)
 
-        logging.info("Launching occasional commit thread")
+        # NEW: fetching skip list
+        cur = self.conn.cursor()
+        query = f"""SELECT skip_pattern from skip_lookup WHERE crawl_id='{crawl_id}';"""
 
+        cur.execute(query)
+
+        self.skip_list = []
+        for skip_tup in cur.fetchall():
+            skip_pattern = skip_tup[0]
+            self.skip_list.append(skip_pattern)
+        print(f"Fetched skip list: {self.skip_list}")
+        time.sleep(1)
+
+        logging.info("Launching occasional commit thread")
         self.sqs_push_threads = {}
         self.thr_ls = []
         for i in range(0, self.commit_threads):
@@ -133,6 +145,7 @@ class GlobusCrawler(Crawler):
         update_thr = threading.Thread(target=self.db_crawl_update_thr, args=())
         update_thr.start()
         print("Successfully started DB update thread!")
+
 
     def db_crawl_end(self):
         cur = self.conn.cursor()
@@ -359,7 +372,7 @@ class GlobusCrawler(Crawler):
                         self.count_bytes_crawled += entry["size"]
 
                         full_url = f"{self.base_url}{full_path}"
-                        print(f"URL: {full_url}")
+                        # print(f"URL: {full_url}")
 
                         f_names.append(full_path)
                         extension = self.get_extension(entry["name"])
@@ -382,7 +395,7 @@ class GlobusCrawler(Crawler):
                 # TODO: Should come out as family objects.
                 if isinstance(families, list):
                     for family in families:
-                        print(f"Family: {family}")
+                        # print(f"Family: {family}")
                         fam = Family()
                         self.count_groups_crawled += len(family['groups'])
 
@@ -402,7 +415,7 @@ class GlobusCrawler(Crawler):
                         dict_fam['metadata']['crawl_timestamp'] = time.time()
                         dict_fam['metadata']['globus_eid'] = self.eid
 
-                        print(f"Sending: {dict_fam}")
+                        # print(f"Sending: {dict_fam}")
                         self.families_to_enqueue.put({"Id": str(self.fam_count), "MessageBody": json.dumps(dict_fam)})
                         self.fam_count += 1
 

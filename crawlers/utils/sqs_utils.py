@@ -33,7 +33,7 @@ def delete_message(client, msg_info):
 
 def get_crawl_work_queue(client):
 
-    crawl_work_queue = 'https://sqs.us-east-1.amazonaws.com/576668000072/crawl_work_queue_DEBUG'
+    crawl_work_queue = 'https://sqs.us-east-1.amazonaws.com/576668000072/crawl_work_queue'
 
     return crawl_work_queue
 
