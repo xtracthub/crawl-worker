@@ -5,7 +5,6 @@ RUN apt-get update
 COPY requirements.txt / 
 RUN pip3 install -r requirements.txt
 
-
 # Copy in all of our code files.
 COPY crawlers /crawlers
 

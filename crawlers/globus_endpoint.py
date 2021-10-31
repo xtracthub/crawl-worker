@@ -14,7 +14,8 @@ from utils.pg_utils import pg_conn
 from utils.globus_utils import get_uid_from_token
 
 from queue import Queue
-from globus_sdk.exc import GlobusAPIError, TransferAPIError, GlobusTimeoutError
+from globus_sdk.exc import GlobusAPIError, GlobusTimeoutError
+from globus_sdk import GlobusError
 from globus_sdk import (TransferClient, AccessTokenAuthorizer, ConfidentialAppAuthClient)
 
 from groupers import matio_grouper, simple_ext_grouper, no_group
