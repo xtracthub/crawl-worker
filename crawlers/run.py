@@ -1,4 +1,6 @@
 
+import time
+
 from utils.pg_utils import pg_conn
 from utils.sqs_utils import get_next_task
 
@@ -8,55 +10,63 @@ from utils.exceptions import *
 
 def main_crawl_loop():
 
-    task = get_next_task()
+    while True:
 
-    crawl_id = task['crawl_id']
-    transfer_token = task['transfer_token']
-    auth_token = task['auth_token']
-    funcx_token = task['funcx_token']
+        try:
+            task = get_next_task()
+        except KeyError:
+            print(f"UNABLE TO FIND A TASK. SLEEPING FOR 5s AND CONTINUING...")
+            time.sleep(5)
+            continue
 
-    conn = pg_conn()
-    cur = conn.cursor()
+        crawl_id = task['crawl_id']
+        print(f"Retrieved crawl job for ID: {crawl_id}")
+        transfer_token = task['transfer_token']
+        auth_token = task['auth_token']
+        funcx_token = task['funcx_token']
 
-    # Step 1: grab tasks
-    get_paths_query = f"SELECT path, path_type, endpoint_id, grouper from crawl_paths where crawl_id='{crawl_id}';"
-    cur.execute(get_paths_query)
+        conn = pg_conn()
+        cur = conn.cursor()
 
-    rows = cur.fetchall()
+        # Step 1: grab tasks
+        get_paths_query = f"SELECT path, path_type, endpoint_id, grouper from crawl_paths where crawl_id='{crawl_id}';"
+        cur.execute(get_paths_query)
 
-    paths = []
-    for row in rows:
-        path = row[0]
-        path_type = row[1]
-        ep_id = row[2]
-        grouper = row[3]
+        rows = cur.fetchall()
 
-        paths.append({'path': path, 'path_type': path_type, 'ep_id': ep_id})
+        paths = []
+        for row in rows:
+            path = row[0]
+            path_type = row[1]
+            ep_id = row[2]
+            grouper = row[3]
 
-    # Step 2: for path in paths...
-    for path_item in paths:
-        if path_item['path_type'].lower() == 'globus':
-            # TODO: bring back Google Drive crawler.
-            # TODO: bump the db start/finish out to here so we can keep the crawlers clean (+ avoid duplication)
-            # TODO: delete messages from queue after receipt
-            cr = GlobusCrawler(crawl_id=crawl_id,
-                               eid=path_item['ep_id'],
-                               trans_token=transfer_token,
-                               auth_token=auth_token,
-                               funcx_token=funcx_token,
-                               path=path_item['path'],
-                               grouper_name=grouper)
-            tc = cr.get_transfer()
+            paths.append({'path': path, 'path_type': path_type, 'ep_id': ep_id})
 
-            try:
-                cr.crawl(tc)
-            except GlobusCrawlException as e:
-                # TODO: right here where I should write to DB
-                # TODO: return error with nice, descriptive message
-                print(f"Exception: {e}")
+        # Step 2: for path in paths...
+        for path_item in paths:
+            if path_item['path_type'].lower() == 'globus':
+                # TODO: bring back Google Drive crawler.
+                # TODO: bump the db start/finish out to here so we can keep the crawlers clean (+ avoid duplication)
+                # TODO: delete messages from queue after receipt
+                cr = GlobusCrawler(crawl_id=crawl_id,
+                                   eid=path_item['ep_id'],
+                                   trans_token=transfer_token,
+                                   auth_token=auth_token,
+                                   funcx_token=funcx_token,
+                                   path=path_item['path'],
+                                   grouper_name=grouper)
+                tc = cr.get_transfer()
 
-    # Step 4: Self-Terminate
-    exit()
+                try:
+                    cr.crawl(tc)
+                except GlobusCrawlException as e:
+                    # TODO: right here where I should write to DB
+                    # TODO: return error with nice, descriptive message
+                    print(f"Exception: {e}")
+
+        # Step 4: Self-Terminate
+        # exit()  # TODO: tyler terminated this on 12/1/21. Should see if this is ever needed again.
 
 
 if __name__ == "__main__":

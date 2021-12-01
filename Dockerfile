@@ -12,11 +12,13 @@ ARG xtract_db=xtract_db
 ARG xtract_pass=xtract_pass
 ARG aws_access=aws_access
 ARG aws_secret=aws_secret
+ARG is_debug=is_debug
 
 ENV XTRACT_DB=$xtract_db
 ENV XTRACT_PASS=$xtract_pass
 ENV AWS_ACCESS=$aws_access
 ENV AWS_SECRET=$aws_secret
+ENV XTRACT_IS_DEV=$is_debug
 
 ARG globus_client=globus_client
 ARG globus_secret=globus_secret
