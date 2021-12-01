@@ -8,6 +8,7 @@ import boto3
 import logging
 import threading
 
+from botocore.exceptions import ClientError
 from random import randint
 from datetime import datetime
 from utils.pg_utils import pg_conn
@@ -15,12 +16,14 @@ from utils.globus_utils import get_uid_from_token
 
 from queue import Queue
 from globus_sdk.exc import GlobusAPIError, GlobusTimeoutError
-from globus_sdk import GlobusError
 from globus_sdk import (TransferClient, AccessTokenAuthorizer, ConfidentialAppAuthClient)
+from globus_sdk.exc import TransferAPIError
 
 from groupers import matio_grouper, simple_ext_grouper, no_group
 
 from base import Crawler
+
+from utils.exceptions import GlobusCrawlException
 
 from xtract_sdk.packagers import Family
 
@@ -97,28 +100,35 @@ class GlobusCrawler(Crawler):
         self.insert_files_queue = Queue()
         self.commit_queue_empty = True  # TODO: switch back to false when committing turned back on.
 
-        self.client = boto3.client('sqs',
-                              aws_access_key_id=os.environ["AWS_ACCESS"],
-                              aws_secret_access_key=os.environ["AWS_SECRET"], region_name='us-east-1')
-        print(f"Creating queue for crawl_id: {self.crawl_id}")
-        queue = self.client.create_queue(QueueName=f"crawl_{str(self.crawl_id)}")
+        try:
+            self.client = boto3.client('sqs',
+                                  aws_access_key_id=os.environ["AWS_ACCESS"],
+                                  aws_secret_access_key=os.environ["AWS_SECRET"], region_name='us-east-1')
+        except ClientError as e:
+            raise
 
-        if queue["ResponseMetadata"]["HTTPStatusCode"] == 200:
+        print(f"Creating queue for crawl_id: {self.crawl_id}")
+
+        try:
+            queue = self.client.create_queue(QueueName=f"crawl_{str(self.crawl_id)}")
+            queue_2 = self.client.create_queue(QueueName=f"transferred_{str(self.crawl_id)}")
+        except Exception as e:
+            # For specific exceptions to catch, please see the following:
+            # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sqs
+            # .html?highlight=sqs#SQS.Client.create_queue
+            raise GlobusCrawlException(f"[crawl-worker]: Unable to create internal crawl queue: {e}")
+
+        if queue["ResponseMetadata"]["HTTPStatusCode"] == 200 or queue_2["ResponseMetadata"]["HTTPStatusCode"] == 200:
             self.queue_url = queue["QueueUrl"]
         else:
-            raise ConnectionError("Received non-200 status from SQS!")
-        print(queue)
+            raise GlobusCrawlException("[crawl-worker] Received non-200 status from SQS!")
 
-        queue_2 = self.client.create_queue(QueueName=f"transferred_{str(self.crawl_id)}")
-
-        if queue_2["ResponseMetadata"]["HTTPStatusCode"] == 200:
-            self.crawl_queue_url = queue_2["QueueUrl"]
-        else:
-            raise ConnectionError("Received non-200 status from SQS!")
-
-        # TODO: catch exceptions for this in run.py
-        print(f"Auth token: {self.auth_token}")
-        self.token_owner = get_uid_from_token(self.funcx_token)
+        try:
+            self.token_owner = get_uid_from_token(self.funcx_token)
+        except Exception as e:
+            # TODO: specific GLobus exception
+            print(f"Invalid token: {self.funcx_token}")
+            raise GlobusCrawlException(f"[crawl-worker] No applicable user token: {e}")
 
         # NEW: fetching skip list
         cur = self.conn.cursor()
@@ -126,12 +136,12 @@ class GlobusCrawler(Crawler):
 
         cur.execute(query)
 
+        # TODO: finish skip-list implementation.
         self.skip_list = []
         for skip_tup in cur.fetchall():
             skip_pattern = skip_tup[0]
             self.skip_list.append(skip_pattern)
         print(f"Fetched skip list: {self.skip_list}")
-        time.sleep(1)
 
         logging.info("Launching occasional commit thread")
         self.sqs_push_threads = {}
@@ -147,8 +157,7 @@ class GlobusCrawler(Crawler):
         update_thr.start()
         print("Successfully started DB update thread!")
 
-
-    def db_crawl_end(self):
+    def db_crawl_end_ok(self):
         cur = self.conn.cursor()
         query = f"UPDATE crawls SET status='complete', ended_on='{datetime.utcnow()}' WHERE crawl_id='{self.crawl_id}';"
         cur.execute(query)
@@ -157,6 +166,20 @@ class GlobusCrawler(Crawler):
                       f"files_crawled={self.count_files_crawled}," \
                       f"bytes_crawled={self.count_bytes_crawled}," \
                       f"groups_crawled={self.count_groups_crawled}"
+        cur.execute(stats_query)
+
+        return self.conn.commit()
+
+    def db_crawl_end_error(self, message):
+        cur = self.conn.cursor()
+        query = f"UPDATE crawls SET status='error', message='{message}'," \
+                f"ended_on='{datetime.utcnow()}' WHERE crawl_id='{self.crawl_id}';"
+        cur.execute(query)
+
+        stats_query = f'UPDATE crawl_stats SET ' \
+                      f'files_crawled={self.count_files_crawled},' \
+                      f'bytes_crawled={self.count_bytes_crawled},' \
+                      f'groups_crawled={self.count_groups_crawled}'
         cur.execute(stats_query)
 
         return self.conn.commit()
@@ -257,7 +280,7 @@ class GlobusCrawler(Crawler):
                 sys.exit('Refresh token has expired. '
                          'Please delete refresh-tokens.json and try again.')
             else:
-                raise ex
+                raise GlobusCrawlException(f"[crawl-worker] Potential token freshness issue. Caught: {ex}")
         return transfer
 
     def launch_crawl_worker(self, transfer, worker_id):
@@ -285,7 +308,6 @@ class GlobusCrawler(Crawler):
         print(f"Total group time: {g_time_end-g_time}")
 
         while True:
-            t_start = time.time()
             all_file_mdata = {}  # Holds all metadata for a given Globus directory.
 
             # If so, then we want the worker to return.
@@ -328,6 +350,10 @@ class GlobusCrawler(Crawler):
             dir_contents = []
             try:
                 while True:
+                    # TODO: handle the following errors re: not being connected to Globus
+                    # TODO: second error: missing Eagle consents?
+                    # ERROR:0:(502, 'ExternalError.DirListingFailed.GCDisconnected', "The Globus Connect Personal endpoint 'tyler-singularity-2 (f9959bd2-e98f-11eb-884c-aba19178789c)' is not currently connected to Globus", 'iU3OV4PGg')
+                    # ERROR:root:Caught error : (403, 'ConsentRequired', 'Missing required data_access consent', 'vwRjkjCns')
                     try:
                         t_gl_ls_start = time.time()
                         file_logger.debug(f"Expanding directory: {cur_dir}")
@@ -357,7 +383,8 @@ class GlobusCrawler(Crawler):
 
                         logging.error(f"Caught error : {e}")
                         logging.error(f"Offending directory: {cur_dir}")
-                        time.sleep(0.25)  # TODO: bring back once we finish benchmarking.
+                        # TODO: should store list of 'offending directories' that we can return to user.
+                        time.sleep(0.25)
 
                 if restart_loop:
                     continue
@@ -371,9 +398,6 @@ class GlobusCrawler(Crawler):
 
                         self.count_files_crawled += 1
                         self.count_bytes_crawled += entry["size"]
-
-                        full_url = f"{self.base_url}{full_path}"
-                        # print(f"URL: {full_url}")
 
                         f_names.append(full_path)
                         extension = self.get_extension(entry["name"])
@@ -393,17 +417,13 @@ class GlobusCrawler(Crawler):
                 self.total_grouping_time += tn-tm
                 self.total_graphing_time = grouper.total_graphing_time
 
-                # TODO: Should come out as family objects.
                 if isinstance(families, list):
                     for family in families:
                         # print(f"Family: {family}")
                         fam = Family()
                         self.count_groups_crawled += len(family['groups'])
 
-                        # TODO: Move all of this into matio_grouper.py
-                        # TODO: Cancel above. Make everything match this today.
                         for group in family['groups']:
-                            # print(f"Group: {group}")
 
                             file_dict_ls = []
                             for fname in group['files']:
@@ -425,6 +445,7 @@ class GlobusCrawler(Crawler):
                 file_logger.error("Transfer client received the following error:")
                 file_logger.error(e)
                 print(e)
+                # TODO: Need to propogate these to the user. Via DB?
                 self.failed_dirs["failed"].append(cur_dir)
                 continue
 
@@ -470,21 +491,15 @@ class GlobusCrawler(Crawler):
 
         t_end = time.time()
 
+        # TODO: check and see if these are still useful.
         print(f"TOTAL TIME: {t_end-t_start}")
-        print(f"Total Auth time: {self.total_auth_time}")
-        print(f"Total Grouping time: {self.total_grouping_time}")
-        print(f"Total Graphing time: {self.total_graphing_time}")
-        print(f"Total Globus time: {self.globus_network_time}")
-        print(tallies)
-        print(size_tallies)
 
         overall_logger.info(f"\n***FINAL groups processed for crawl_id {self.crawl_id}: {self.group_count}***")
         overall_logger.info(f"\n*** CRAWL COMPLETE  (ID: {self.crawl_id})***")
 
         while True:
-            # TODO 2: Should also not check queue but receive status directly from DB thread.
             if self.commit_queue_empty:
-                self.db_crawl_end()
+                self.db_crawl_end_ok()
                 break
             else:
                 print("Crawl completed, but waiting for commit queue to finish!")

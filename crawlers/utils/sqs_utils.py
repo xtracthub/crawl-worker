@@ -4,15 +4,9 @@ import os
 import json
 
 import boto3
-# TODO: low-priority make the crawl-worker have a persistent SQS client object (e.g., make a class).
 
 
 def get_sqs_conn():
-
-    # print("These are the keys...")
-    # print(os.environ['AWS_ACCESS'])
-    # print(os.environ['AWS_SECRET'])
-    # print(os.environ['XTRACT_DB'])
 
     client = boto3.client('sqs',
                           aws_access_key_id=os.environ["AWS_ACCESS"],
@@ -23,8 +17,6 @@ def get_sqs_conn():
 def delete_message(client, msg_info):
 
     crawl_queue = get_crawl_work_queue(client)
-
-    print(msg_info)
 
     client.delete_message_batch(
         QueueUrl=crawl_queue,
@@ -47,7 +39,7 @@ def get_next_task(max_timeout=20, delete_messages=True):
 
     sqs_response = client.receive_message(  # TODO: properly try/except this block.
         QueueUrl=crawl_work_queue,
-        MaxNumberOfMessages=1,
+        MaxNumberOfMessages=1,  # only 1 because we're not scaling to 'crawl jobs per second'.
         WaitTimeSeconds=max_timeout)
 
     print("Successfully received task from SQS!")

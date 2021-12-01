@@ -3,16 +3,12 @@ from utils.pg_utils import pg_conn
 from utils.sqs_utils import get_next_task
 
 from globus_endpoint import GlobusCrawler
+from utils.exceptions import *
 
-
-# crawler_mapping = {'globus': GlobusCrawler, 'gdrive': 'TODO'}
-
-# TODO: Get the token owner from auth introspection (see Globus crawler).
 
 def main_crawl_loop():
 
     task = get_next_task()
-    print(task)
 
     crawl_id = task['crawl_id']
     transfer_token = task['transfer_token']
@@ -25,8 +21,6 @@ def main_crawl_loop():
     # Step 1: grab tasks
     get_paths_query = f"SELECT path, path_type, endpoint_id, grouper from crawl_paths where crawl_id='{crawl_id}';"
     cur.execute(get_paths_query)
-
-    print(f"get_paths_query: {get_paths_query}")
 
     rows = cur.fetchall()
 
@@ -53,7 +47,13 @@ def main_crawl_loop():
                                path=path_item['path'],
                                grouper_name=grouper)
             tc = cr.get_transfer()
-            cr.crawl(tc)
+
+            try:
+                cr.crawl(tc)
+            except GlobusCrawlException as e:
+                # TODO: right here where I should write to DB
+                # TODO: return error with nice, descriptive message
+                print(f"Exception: {e}")
 
     # Step 4: Self-Terminate
     exit()
