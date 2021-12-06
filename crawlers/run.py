@@ -1,14 +1,89 @@
 
+import json
 import time
+import requests
+import threading
 
 from utils.pg_utils import pg_conn
-from utils.sqs_utils import get_next_task
+from utils.sqs_utils import get_next_task, get_dev_status
 
 from globus_endpoint import GlobusCrawler
 from utils.exceptions import *
 
 
+class HeartbeatThread:
+    def __init__(self):
+        self.to_terminate = False
+        self.is_dev = get_dev_status()
+        self.crawl_id_lock = False
+        self.current_crawl_id = None
+        if self.is_dev:
+            self.hb_url = "http://docker.for.mac.host.internal:5000/heartbeat"
+        else:
+            raise NotImplementedError("Please add the production option")
+
+    def hb_thread(self):
+        print("Starting heartbeat thread...")
+        while True:
+            time.sleep(5)
+
+            print(f"[hb] Sending hb...")
+            resp = requests.get(self.hb_url, json={'crawl_id': self.current_crawl_id})
+            hb_return_obj = json.loads(resp.json())
+            print(hb_return_obj)
+
+            ret_crawl_id = hb_return_obj['crawl_id']
+            hb_return_status = hb_return_obj['status']
+
+            if ret_crawl_id != self.current_crawl_id:
+                print(f"[hb] We are no longer tracking crawl_id {ret_crawl_id}. Continuing...")
+                continue
+
+            if hb_return_status == "STOP":
+                self.to_terminate = True
+
+                # Checking again because of potential race condition.
+                while True:
+                    if self.crawl_id_lock:
+                        print(f"Crawl ID is locked. Sleeping 3 seconds and trying again...")
+                        time.sleep(3)
+                        continue
+                    else:
+                        self.crawl_id_lock = True  # CRAWL_ID IS LOCKED.
+                        break
+
+                if ret_crawl_id != self.current_crawl_id:
+                    print(f"[hb] We are no longer tracking crawl_id {ret_crawl_id}. Continuing...")
+                    continue
+                else:
+                    self.current_crawl_id = None
+
+                self.crawl_id_lock = False
+
+    def start_hb_thread(self):
+        th = threading.Thread(target=self.hb_thread, args=())
+        th.daemon = True
+        th.start()
+
+    def set_crawl_id(self, crawl_id):
+        # Checking again because of potential race condition.
+        while True:
+            if self.crawl_id_lock:
+                print(f"Crawl ID is locked. Sleeping 3 seconds and trying again...")
+                time.sleep(3)
+                continue
+            else:
+                self.crawl_id_lock = True  # CRAWL_ID IS LOCKED.
+                break
+        self.current_crawl_id = crawl_id
+        self.to_terminate = False
+        self.crawl_id_lock = False
+
+
 def main_crawl_loop():
+
+    hb = HeartbeatThread()
+    hb.start_hb_thread()
 
     while True:
 
@@ -24,6 +99,10 @@ def main_crawl_loop():
         transfer_token = task['transfer_token']
         auth_token = task['auth_token']
         funcx_token = task['funcx_token']
+
+        # Set crawl_id in heartbeater.
+        # This will also set hb.to_terminate to False.
+        hb.set_crawl_id(crawl_id=crawl_id)
 
         conn = pg_conn()
         cur = conn.cursor()
@@ -65,6 +144,9 @@ def main_crawl_loop():
                     # TODO: return error with nice, descriptive message
                     print(f"Exception: {e}")
 
+        if hb.to_terminate:
+            print(f"Need to inject this logic INTO the crawlers. This needs to pause the crawl and just continue...")
+            continue
         # Step 4: Self-Terminate
         # exit()  # TODO: tyler terminated this on 12/1/21. Should see if this is ever needed again.
 

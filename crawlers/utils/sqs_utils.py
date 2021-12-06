@@ -6,7 +6,7 @@ import json
 import boto3
 
 
-def _get_dev_status():
+def get_dev_status():
     raw_is_dev = os.environ["XTRACT_IS_DEV"]
     print(f"RAW IS DEV: {raw_is_dev}")
     if raw_is_dev == "TRUE":
@@ -37,7 +37,7 @@ def delete_message(client, msg_info):
 
 def get_crawl_work_queue():
 
-    is_dev = _get_dev_status()
+    is_dev = get_dev_status()
 
     if is_dev:
         crawl_work_queue = 'https://sqs.us-east-1.amazonaws.com/576668000072/crawl_work_queue_DEBUG'
