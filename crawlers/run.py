@@ -18,7 +18,7 @@ class HeartbeatThread:
         self.crawl_id_lock = False
         self.current_crawl_id = None
         if self.is_dev:
-            self.hb_url = "http://docker.for.mac.host.internal:5000/heartbeat"
+            self.hb_url = "http://xtractcrawler5-env.eba-akbhvznm.us-east-1.elasticbeanstalk.com/heartbeat"
         else:
             raise NotImplementedError("Please add the production option")
 
@@ -27,9 +27,15 @@ class HeartbeatThread:
         while True:
             time.sleep(5)
 
+            if self.current_crawl_id is None:
+                print(f"[hb] No current crawl_id!")
+                continue
+
             print(f"[hb] Sending hb...")
             resp = requests.get(self.hb_url, json={'crawl_id': self.current_crawl_id})
-            hb_return_obj = json.loads(resp.json())
+            hb_return_obj = resp.json()
+
+            # print(hb_return_obj.json())
             print(hb_return_obj)
 
             ret_crawl_id = hb_return_obj['crawl_id']
@@ -143,6 +149,8 @@ def main_crawl_loop():
                     # TODO: right here where I should write to DB
                     # TODO: return error with nice, descriptive message
                     print(f"Exception: {e}")
+
+        hb.current_crawl_id = None
 
         if hb.to_terminate:
             print(f"Need to inject this logic INTO the crawlers. This needs to pause the crawl and just continue...")
