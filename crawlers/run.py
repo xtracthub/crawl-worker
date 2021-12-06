@@ -17,10 +17,12 @@ class HeartbeatThread:
         self.is_dev = get_dev_status()
         self.crawl_id_lock = False
         self.current_crawl_id = None
+
+        # TODO: these are the same. See if we need to separate.
         if self.is_dev:
             self.hb_url = "http://xtractcrawler5-env.eba-akbhvznm.us-east-1.elasticbeanstalk.com/heartbeat"
         else:
-            raise NotImplementedError("Please add the production option")
+            self.hb_url = "http://xtractcrawler5-env.eba-akbhvznm.us-east-1.elasticbeanstalk.com/heartbeat"
 
     def hb_thread(self):
         print("Starting heartbeat thread...")
