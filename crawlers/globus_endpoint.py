@@ -358,11 +358,15 @@ class GlobusCrawler(Crawler):
                         t_gl_ls_start = time.time()
                         file_logger.debug(f"Expanding directory: {cur_dir}")
                         dir_contents = transfer.operation_ls(self.eid, path=cur_dir)
+                        # print(f"Dir contents: {dir_contents}")
+                        # print(cur_dir)
 
                         t_gl_ls_end = time.time()
 
                         file_logger.info(f"Total time to do globus_ls: {t_gl_ls_end - t_gl_ls_start}")
                         self.globus_network_time += t_gl_ls_end - t_gl_ls_start
+                        rand_mini_wait = randint(1,5)
+                        time.sleep(rand_mini_wait/10)  # TODO: TYLER DO SOMETHING ABOUT THIS.
                         break
 
                     except GlobusTimeoutError as e:
@@ -386,12 +390,15 @@ class GlobusCrawler(Crawler):
                         # TODO: should store list of 'offending directories' that we can return to user.
                         time.sleep(0.25)
 
+                # print(f"Beep boop")
                 if restart_loop:
                     continue
 
                 # Step 1. All files have own file metadata.
                 f_names = []
+                # print(dir_contents)
                 for entry in dir_contents:
+                    # print(f"Entry: {entry}")
 
                     full_path = os.path.join(cur_dir, entry['name'])
                     if entry['type'] == 'file':
